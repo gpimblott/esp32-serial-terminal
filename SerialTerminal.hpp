@@ -38,7 +38,7 @@ namespace maschinendeck {
     String description;
 
     Command(String command,  
-            String paramDescription
+            String paramDescription,
             void(*callback)(String param), 
             String description) : command(command), 
             paramDescription(paramDescription),
