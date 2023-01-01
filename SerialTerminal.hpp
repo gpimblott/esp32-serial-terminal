@@ -62,17 +62,6 @@ namespace maschinendeck {
       bool firstRun;
       String message;
 
-      #ifndef ST_FLAG_NOHELP
-      void printCommands() {
-        for (uint8_t i = 0; i < this->size_; i++) {
-          Serial.println("\t" + this->commands[i]->command + "\t" + this->commands[i]->description);
-        }
-        #ifndef ST_FLAG_NOPROMPT
-        Serial.print("st> ");
-        #endif
-      }
-      #endif
-
     public:
       SerialTerminal(long baudrate = 0) : size_(0), firstRun(true), message("") {
         #if not defined ST_FLAG_NOBUILTIN && defined E2END
@@ -96,6 +85,15 @@ namespace maschinendeck {
         this->size_++;
       }
 
+      void printCommands() {
+        for (uint8_t i = 0; i < this->size_; i++) {
+          Serial.println("\t" + this->commands[i]->command + "\t" + this->commands[i]->description);
+        }
+        #ifndef ST_FLAG_NOPROMPT
+        Serial.print("st> ");
+        #endif
+      }
+
       uint8_t size() {
         return this->size_ + 1;
       }
@@ -104,7 +102,7 @@ namespace maschinendeck {
         #ifndef ST_FLAG_NOHELP
         if (this->firstRun) {
           this->firstRun = false;
-            this->printCommands();
+          this->printCommands();
         }
         #endif
         if (!Serial.available())
