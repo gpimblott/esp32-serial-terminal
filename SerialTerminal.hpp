@@ -33,10 +33,17 @@ namespace maschinendeck {
 
   struct Command {
     String command;
+    String paramDescription;
     void(*callback)(String param);
     String description;
 
-    Command(String command,  void(*callback)(String param), String description) : command(command), callback(callback), description(description) {}
+    Command(String command,  
+            String paramDescription
+            void(*callback)(String param), 
+            String description) : command(command), 
+            paramDescription(paramDescription),
+            callback(callback), 
+            description(description) {}
   };
 
   template <typename T, typename U>
@@ -78,16 +85,17 @@ namespace maschinendeck {
         #endif
       }
 
-      void add(String command,  void(*callback)(String param), String description = "") {
+      void add(String command,  String paramDescription, void(*callback)(String param), String description = "") {
         if (this->size_ >= 64)
           return;
-        this->commands[this->size_] = new Command(command, callback, description);
+        this->commands[this->size_] = new Command(command, paramDescription, callback, description);
         this->size_++;
       }
 
       void printCommands() {
         for (uint8_t i = 0; i < this->size_; i++) {
-          Serial.println("\t" + this->commands[i]->command + "\t" + this->commands[i]->description);
+          Serial.println("\t" + this->commands[i]->command + " " + this->commands[i]->paramDescription + 
+                         "\t" + this->commands[i]->description);
         }
         #ifndef ST_FLAG_NOPROMPT
         Serial.print("st> ");
