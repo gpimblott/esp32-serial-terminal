@@ -1,6 +1,11 @@
 #pragma once
 
-#define ST_VERSION "1.1.2"
+#define ST_VERSION "1.2"
+#define CRLF "\r\n"
+#define MAX_COMMANDS 64
+
+#define ST_PRINT(str) Serial.print(str)
+#define ST_PRINTLINE(str) Serial.println(str)
 
 #include <Arduino.h>
 
@@ -31,6 +36,9 @@ namespace maschinendeck {
   }
   #endif
 
+  /**
+   * Representation of a command to be executed 
+   */
   struct Command {
     String command;
     String paramDescription;
@@ -62,62 +70,108 @@ namespace maschinendeck {
       }
   };
 
+  /**
+   * Main class that implements the terminal
+   */
   class SerialTerminal {
     private:
       Command* commands[256];
       uint8_t size_;
       bool firstRun;
       String message;
+      String prompt;
 
     public:
-      SerialTerminal(long baudrate = 0) : size_(0), firstRun(true), message("") {
+      SerialTerminal(long baudrate = 0, String prompt = "st") : size_(0), firstRun(true), message(""), prompt(prompt) {
         #if not defined ST_FLAG_NOBUILTIN && defined E2END
-            this->add("eeprom", &printEEPROM, "prints the contents of EEPROM");
+        this->add("eeprom", &printEEPROM, "prints the contents of EEPROM");
         #endif
-        if (baudrate > 0)
+
+        if (baudrate > 0) {
             Serial.begin(baudrate);
+        }
+        
         #ifndef ST_FLAG_NOHELP
-            Serial.print("SerialTerm v");
-            Serial.print(ST_VERSION);
-            Serial.print("\r\n");
-            Serial.println("(C) 2022, MikO - Hpsaturn");
-            Serial.println("  available commands:");
+        ST_PRINT(F("SerialTerm v"));
+        ST_PRINTLINE(ST_VERSION);
+        ST_PRINTLINE(F("(C) 2022, MikO - Hpsaturn & G.Pimblott"));
+        ST_PRINTLINE(F("\tCommands:"));
         #endif
       }
 
+      /**
+       * Add a new command to check for
+       */
       void add(String command,  String paramDescription, void(*callback)(String param), String description = "") {
-        if (this->size_ >= 64)
+        if (this->size_ >= MAX_COMMANDS)
           return;
+
         this->commands[this->size_] = new Command(command, paramDescription, callback, description);
         this->size_++;
       }
 
+      /**
+       * Print the defined commands to the conole
+       */
       void printCommands() {
         for (uint8_t i = 0; i < this->size_; i++) {
-          Serial.println("\t" + this->commands[i]->command + " " + this->commands[i]->paramDescription + 
-                         "\t" + this->commands[i]->description);
+          String params = this->commands[i]->paramDescription;
+          ST_PRINT("\t\t" + this->commands[i]->command + " ");
+          ST_PRINT( params.length()==0?"\t\t":params );
+          ST_PRINTLINE("\t" + this->commands[i]->description);
         }
-        #ifndef ST_FLAG_NOPROMPT
-        Serial.print("st> ");
-        #endif
       }
 
+      /**
+       * Parse the message, find the asscociated command and calls its action
+       */
+      bool findCommandAndCallAction(String message) {
+        Pair<String, String> command = SerialTerminal::ParseCommand(message);
+        bool found = false;
+        for (uint8_t i = 0; i < this->size_ && !found; i++) {
+          if (this->commands[i]->command == command.first()) {
+            this->commands[i]->callback(command.second());
+            found = true;
+          }
+        }
+
+        // If we didn't find the command then tell the user
+        if (!found) {
+            ST_PRINT("\n"+command.first());
+            ST_PRINTLINE(F(": command not found"));
+        }
+
+        return found;
+      }
+
+      /**
+       * Number of commands that have been defined
+       */
       uint8_t size() {
         return this->size_ + 1;
       }
 
+      /**
+       * loop() : should be called every execution cycle to process characters entered  
+       */
       void loop() {
         #ifndef ST_FLAG_NOHELP
         if (this->firstRun) {
           this->firstRun = false;
           this->printCommands();
+          displayPrompt();
         }
         #endif
-        if (!Serial.available())
-          return;
+
+        if (!Serial.available()) return;
+
         bool commandComplete = false;
         while (Serial.available()) {
             char car = Serial.read();
+            if (isAscii(car)) {
+                Serial.print(car);
+            }
+
             if (car == 127 && this->message.length() > 0) {
                 Serial.print("\e[1D");
                 Serial.print(' ');
@@ -125,11 +179,10 @@ namespace maschinendeck {
                 this->message.remove(this->message.length() - 1);
                 continue;
             }
-            if (isAscii(car))
-                Serial.print(car);
+           
             // Check if user ended the line
             if (car == '\r') {
-                Serial.print("\r\n");
+                Serial.print(CRLF);
                 commandComplete = true;
                 // If there are more data on the line, drop a \n, if it is
                 // there. Some terminals may send both, giving 
@@ -143,58 +196,57 @@ namespace maschinendeck {
             }
             this->message += car;
         }
-
-        if (!commandComplete)
-            return;
-        if (this->message == "") {
-            #ifndef ST_FLAG_NOPROMPT
-            Serial.print("st> ");
-            #endif
-
-            return;
+      
+        // If we have a messge then look it up and call the action
+        if (commandComplete && !this->message.isEmpty()) {
+          // Lookup the action for the message and call it
+          bool found = findCommandAndCallAction( this->message);
+          this->message = "";
+        }
+        
+        // Is the message
+        if( this->message.isEmpty()) {
+          displayPrompt();
         }
 
-        Pair<String, String> command = SerialTerminal::ParseCommand(this->message);
-        this->message = "";
-        bool found = false;
-        for (uint8_t i = 0; i < this->size_; i++) {
-          if (this->commands[i]->command == command.first()) {
-            this->commands[i]->callback(command.second());
-            found = true;
-          }
-        }
-        if (!found) {
-            Serial.print("\n"+command.first());
-            Serial.println(": command not found");
-        }
-        #ifndef ST_FLAG_NOPROMPT
-        Serial.print("\r\nst> ");
-        #endif
       }
 
       static Pair<String, String> ParseCommand(String message) {
         String keyword = "";
         for (auto& car : message) {
-          if (car == ' ')
-            break;
+          if (car == ' ') break;
           keyword += car;
         }
-        if (keyword != "")
-        message.remove(0, keyword.length());
+        if (!keyword.isEmpty()) {
+          message.remove(0, keyword.length());
+        }
+
         keyword.trim();
         message.trim();
 
         return Pair<String, String>(keyword, message);
       }
 
+      /**
+       * Display the prompt to the console if required  
+       */
+      void displayPrompt(){
+        #ifndef ST_FLAG_NOPROMPT
+        ST_PRINT(CRLF + prompt + "> ");
+        #endif
+      }
+
+      /**
+       * Parse the entered string
+      */
       static String ParseArgument(String message) {
-        String keyword = "";
+        String keyword;
         for (auto& car : message) {
           if (car == '"')
             break;
           keyword += car;
         }
-        if (keyword != "")
+        if (!keyword.isEmpty())
         message.remove(0, keyword.length());
         message.trim();
         int msg_len = message.length();
