@@ -3,6 +3,7 @@
 #define ST_VERSION "1.2"
 #define CRLF "\r\n"
 #define MAX_COMMANDS 64
+#define CMD_DESCRIPTION_POS 30
 
 #define ST_PRINT(str) Serial.print(str)
 #define ST_PRINTLINE(str) Serial.println(str)
@@ -115,10 +116,17 @@ namespace maschinendeck {
        */
       void printCommands() {
         for (uint8_t i = 0; i < this->size_; i++) {
+          String command = this->commands[i]->command;
           String params = this->commands[i]->paramDescription;
-          ST_PRINT("\t\t" + this->commands[i]->command + " ");
-          ST_PRINT( params.length()==0?"\t\t":params );
-          ST_PRINTLINE("\t" + this->commands[i]->description);
+          int commandLen = command.length();
+          int paramsLen = params.length();
+          int numSpaces = CMD_DESCRIPTION_POS - commandLen - paramsLen;
+
+          std::string spaces((numSpaces>0?numSpaces:1), ' ');
+
+          ST_PRINT("\t" + this->commands[i]->command + " " + params);
+          ST_PRINT( spaces.c_str() );
+          ST_PRINTLINE(this->commands[i]->description);
         }
       }
 
